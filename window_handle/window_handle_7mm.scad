@@ -20,16 +20,26 @@ hub_h   = socket_depth + 4.5;   // 24mm, 끝 4.5mm는 막힌 캡
 edge_r  = 1.6;         // 모서리 라운드
 
 /* [레버 / Lever] */
-lever_len  = 60;       // 축 중심 ~ 레버 끝 (원래 손잡이보다 훨씬 짧음)
-lever_t    = 14;       // 레버 두께 (Z)
-lever_w0   = 17;       // 레버 뿌리 폭
-lever_w1   = 14;       // 레버 끝 폭
-lever_mid  = 28;       // 테이퍼 시작 위치
+lever_len  = 80;       // 축 중심 ~ 레버 끝
+lever_t    = 14;       // 레버 뿌리 두께 (Z)
+grip_r     = 3.0;      // 그립부 모서리 라운드 (손에 닿는 곳은 크게)
+// 레버 단면 [축 중심에서 거리, 폭, 두께]
+//  뿌리(굵게) → 허리(손가락 걸림) → 손바닥 그립(넓게) → 끝(둥글게)
+lever_pts = [
+    [24, 17, 14],
+    [38, 15, 13],
+    [60, 20, 13],
+    [lever_len - 9, 18, 12.5],
+];
 
 /* [고정 나사 / Set screw] */
 use_setscrew = true;
-screw_d      = 2.8;    // M3 나사 직접 체결(셀프탭). 인서트 사용 시 4.0
+screw_d      = 2.8;    // M3 나사산이 직접 파고드는 구멍 (인서트 사용 시 4.0)
 screw_z      = 9;      // 창틀 쪽 면에서의 높이
+// M3 접시머리 볼트(90°, ISO 10642 육각렌치 / ISO 7046 십자 모두 가능)
+screw_len    = 8;      // 볼트 전체 길이 (접시머리는 머리 포함 길이) → M3x8
+csk_d        = 6.72 + 0.3; // 머리 최대 지름(ISO 10642) + 여유
+screw_bite   = 0.5;    // 머리가 자리에 닿을 때 볼트 끝이 축을 눌러 들어가는 양
 
 /* [출력] */
 part = "handle";       // handle | coupon | assembly | section | print
@@ -52,18 +62,16 @@ module square_socket_2d(s) {
 }
 
 module body() {
-    lz = hub_h - lever_t;
+    // 레버 바깥면(=출력 시 베드 면)은 평평하게 유지, 두께는 창틀 쪽으로만 변화
+    module sec(pt) translate([0, -pt[0], hub_h - pt[2]]) puck(pt[1] / 2, pt[2], min(grip_r, pt[2] / 2 - 0.5));
     union() {
         puck(hub_d / 2, hub_h);
         // 허브-레버 연결부: hull 로 넓은 필렛(거셋) 형성 → 뿌리 응력 분산
-        translate([0, 0, lz]) hull() {
-            puck(hub_d / 2, lever_t);
-            translate([0, -lever_mid, 0]) puck(lever_w0 / 2, lever_t);
+        hull() {
+            translate([0, 0, hub_h - lever_t]) puck(hub_d / 2, lever_t);
+            sec(lever_pts[0]);
         }
-        translate([0, 0, lz]) hull() {
-            translate([0, -lever_mid, 0]) puck(lever_w0 / 2, lever_t);
-            translate([0, -(lever_len - lever_w1 / 2), 0]) puck(lever_w1 / 2, lever_t);
-        }
+        for (i = [0 : len(lever_pts) - 2]) hull() { sec(lever_pts[i]); sec(lever_pts[i + 1]); }
     }
 }
 
@@ -76,8 +84,14 @@ module handle() {
         // 입구 챔퍼 (끼우기 쉽게)
         translate([0, 0, -0.01]) linear_extrude(1.0, scale = s / (s + 2)) square(s + 2, center = true);
         // 고정 나사 구멍 (레버 반대쪽)
-        if (use_setscrew)
-            translate([0, 0, screw_z]) rotate([-90, 0, 0]) cylinder(d = screw_d, h = hub_d, $fn = 24);
+        if (use_setscrew) translate([0, 0, screw_z]) rotate([-90, 0, 0]) {
+            cylinder(d = screw_d, h = hub_d, $fn = 24);
+            // 접시 자리: 90° 원뿔 + 머리 위 여유 구멍
+            // 머리 윗면 위치: 머리가 완전히 묻혔을 때 볼트 끝이 축을 screw_bite 만큼 누름
+            seat = (spindle + fit_clear) / 2 - screw_bite + screw_len;
+            translate([0, 0, seat - csk_d / 2]) cylinder(d1 = 0, d2 = csk_d, h = csk_d / 2, $fn = 48);
+            translate([0, 0, seat - 0.01]) cylinder(d = csk_d, h = hub_d, $fn = 48);
+        }
         // 바깥 면 방향 표시 홈 (레버 방향 화살표)
         translate([0, -2, hub_h - 0.6]) linear_extrude(1)
             polygon([[-3, 0], [3, 0], [0, -5]]);
